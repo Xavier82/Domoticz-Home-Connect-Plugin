@@ -61,6 +61,8 @@ import homeconnecthelper
 import datetime
 import os
 
+TOKEN_ENDPOINT = "https://api.home-connect.com/security/oauth/token"
+
 class BasePlugin:
 
     httpServerConn = None
@@ -91,11 +93,15 @@ class BasePlugin:
     def onStart(self):
         Domoticz.Log("onStart called "+Parameters["Key"])
         self.clientid = Parameters["Mode3"]
-        homeconnecthelper.connectHomeConnect(self,Parameters["Username"],Parameters["Password"],Parameters["Mode1"])
-        self.haId = homeconnecthelper.gethaId(self,Parameters["Mode1"],Parameters["Mode4"])
-        Domoticz.Log("haId: "+self.haId)
+        homeconnecthelper.connectHomeConnect(self, Parameters["Username"], Parameters["Password"], Parameters["Mode1"])
+        self.haId = homeconnecthelper.gethaId(self, Parameters["Mode1"], Parameters["Mode4"])
+        Domoticz.Log("haId: " + (self.haId or ""))
         if Parameters["Mode2"] == "True":
             loadIcons(self, Images)
+        # Check if the device with ID 5 already exists
+        if 5 not in Devices:
+            # If it doesn't exist, create it as a Door State device
+            Domoticz.Device(Name="Door State", Unit=5, TypeName="Switch", Image=9).Create()
         
         #Create devices
         if len(Devices) == 0:
@@ -130,11 +136,11 @@ class BasePlugin:
                     Domoticz.Device(Name="Remaining program time", Unit=7, TypeName="Custom").Create()
 
                 ##Estimated time
-                if Parameters["Mode2"] == "True":
-                    #Domoticz.Device(Name="Estimated time", Unit=8, TypeName="Custom", Image=Images[self.HOMECONNECT_ICON].ID).Create()
-                    Domoticz.Device(Name="Estimated program time", Unit=8, TypeName="Text", Image=Images[self.HOMECONNECT_ICON].ID).Create()
-                else:
-                    Domoticz.Device(Name="Estimated program time", Unit=8, TypeName="Text").Create()
+                #if Parameters["Mode2"] == "True":
+                #    #Domoticz.Device(Name="Estimated time", Unit=8, TypeName="Custom", Image=Images[self.HOMECONNECT_ICON].ID).Create()
+                #    Domoticz.Device(Name="Estimated program time", Unit=8, TypeName="Text", Image=Images[self.HOMECONNECT_ICON].ID).Create()
+                #else:
+                #    Domoticz.Device(Name="Estimated program time", Unit=8, TypeName="Text").Create()
 
                 ##Device specific devices
                 if Parameters["Mode1"] == self.DEVICE_DISHWASHER:
@@ -145,7 +151,8 @@ class BasePlugin:
                         Domoticz.Device(Name="Current program state", Unit=4, TypeName="Text").Create()
 
                     ##Door state
-                    Domoticz.Device(Name="Door state", Unit=5, Type=244, Subtype=73, Switchtype=11).Create()
+                    if self.haId is not None:
+                        Domoticz.Device(Name="Door state", Unit=5, Type=244, Subtype=73, Switchtype=11).Create()
 
                 if Parameters["Mode1"] == self.DEVICE_WASHER:
                     #Customer Washer devices
@@ -189,7 +196,7 @@ class BasePlugin:
         powerstate = ""
         powerstate = homeconnecthelper.getPowerState(self,self.haId)
         if powerstate != "" and powerstate != None:
-            powerstate = powerstate.rpartition(".")[2]
+            
             if powerstate == "On":
                 Devices[2].Update(nValue=1,sValue="On")
             else:
@@ -271,7 +278,7 @@ class BasePlugin:
                             elif deviceKey == "BSH.Common.Option.Hood.IntensiveLevel":
                                 Domoticz.Log(deviceKey+" --> "+str(deviceValue))
                                 if Parameters["Mode1"] == self.DEVICE_HOOD:
-                                    intensiveLevel == deviceValue.rpartition(".")[2]
+                                    intensiveLevel = deviceValue.rpartition(".")[2]
                                     if intensiveLevel == "IntensiveStageOff":
                                         Devices[11].Update(nValue=0,sValue="0")
                                     elif intensiveLevel == "IntensiveStage1":
@@ -393,7 +400,7 @@ class BasePlugin:
         self.httpClientConn.Send({"Status":"200 OK", "Headers": {"Connection": "keep-alive", "Accept": "Content-Type: text/html; charset=UTF-8"}, "Data": data})
 
     def onCommand(self, Unit, Command, Level, Hue):
-        Domoticz.Log("onCommand called for Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
+        Domoticz.Log("onCommand called for Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))        
         if Parameters["Mode1"] == self.DEVICE_DISHWASHER:
             if str(Command) == "On":
                 if homeconnecthelper.setPowerState(self, self.DEVICE_DISHWASHER, str(Command)) == True:
@@ -449,6 +456,31 @@ class BasePlugin:
             del self.httpServerConns[Connection.Name]
 
     def onHeartbeat(self):
+        getPowerState= homeconnecthelper.getPowerState(self, self.haId)
+        if getPowerState is not None:
+            Devices[2].Update(nValue=Devices[2].nValue, sValue=getPowerState.rpartition(".")[2])
+        
+        operationstate = homeconnecthelper.getOperationState(self, self.haId)
+        if operationstate is not None:
+            Devices[1].Update(nValue=Devices[1].nValue, sValue=operationstate.rpartition(".")[2])
+
+        getDoorState= homeconnecthelper.getDoorState(self, self.haId)
+        if getDoorState is not None:
+            Devices[5].Update(nValue=Devices[2].nValue, sValue=getDoorState.rpartition(".")[2])
+
+        getActiveProgram= homeconnecthelper.getActiveProgram(self, self.haId)
+        if getActiveProgram is not None:
+            Devices[3].Update(nValue=Devices[2].nValue, sValue=getActiveProgram.rpartition(".")[2])
+
+        getProgramProgress= homeconnecthelper.getProgramProgress(self, self.haId)
+        if getProgramProgress is not None:
+            Devices[6].Update(nValue=Devices[2].nValue, sValue=getProgramProgress.rpartition(".")[2])
+
+        getRemainingProgramTime= homeconnecthelper.getRemainingProgramTime(self, self.haId)
+        if getRemainingProgramTime is not None:
+            Devices[7].Update(nValue=Devices[2].nValue, sValue=getRemainingProgramTime.rpartition(".")[2])
+    
+        Domoticz.Log("Device updates completed")
         Domoticz.Log("onHeartbeat called")
 
 global _plugin
